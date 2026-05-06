@@ -1,0 +1,36 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // ── Helper functions ──
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function getUserRole() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isManager() {
+      return isAuthenticated() && (getUserRole() == 'admin' || getUserRole() == 'manager');
+    }
+
+    // ── Athlete Photos ──
+    match /athletes/{allPaths=**} {
+      allow read: if isAuthenticated();
+      allow write: if isManager();
+    }
+
+    // ── General Uploads ──
+    match /uploads/{allPaths=**} {
+      allow read: if isAuthenticated();
+      allow write: if isManager();
+    }
+
+    // ── Block everything else ──
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

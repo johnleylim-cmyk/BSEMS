@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "839797069567",
+    "project_id": "bsems-851f2",
+    "storage_bucket": "bsems-851f2.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:839797069567:android:3e8b0a93065ecc824adeca",
+        "android_client_info": {
+          "package_name": "com.example.bsems"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD6o9vC5MFfddA7EiDVZuDYL0RaGF_TnlE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
