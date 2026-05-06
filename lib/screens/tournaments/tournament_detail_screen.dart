@@ -12,6 +12,7 @@ import '../../providers/tournament_provider.dart';
 import '../../providers/match_provider.dart';
 import '../../providers/team_provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../widgets/avatar_badge.dart';
 import '../../widgets/glass_card.dart';
 import '../../widgets/gradient_button.dart';
 
@@ -80,6 +81,10 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen> {
       rounds.add(m.round);
     }
     final sortedRounds = rounds.toList()..sort();
+    final championHighlight = _resolveChampionHighlight(
+      matches,
+      tournament.format,
+    );
 
     return Scaffold(
       backgroundColor: AppTheme.background,
@@ -255,6 +260,13 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen> {
 
             // Bracket Visualization
             if (matches.isNotEmpty) ...[
+              if (championHighlight != null) ...[
+                _ChampionBanner(
+                  tournamentName: tournament.name,
+                  highlight: championHighlight,
+                ).animate().fadeIn(delay: 260.ms).slideY(begin: 0.04),
+                const SizedBox(height: 20),
+              ],
               Text(
                 'Bracket',
                 style: Theme.of(context).textTheme.headlineMedium,
@@ -309,6 +321,8 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen> {
                                 match: m,
                                 canManage: auth.isManager,
                                 onScore: () => _scoreMatch(context, m),
+                                team1Logo: context.read<TeamProvider>().getLogoForTeam(m.team1Id),
+                                team2Logo: context.read<TeamProvider>().getLogoForTeam(m.team2Id),
                               ),
                             ),
                           ],
@@ -399,6 +413,8 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen> {
                       match: m,
                       canManage: canManage,
                       onScore: () => _scoreMatch(context, m),
+                      team1Logo: context.read<TeamProvider>().getLogoForTeam(m.team1Id),
+                      team2Logo: context.read<TeamProvider>().getLogoForTeam(m.team2Id),
                     ),
                   ),
                 ],
@@ -443,6 +459,8 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen> {
               match: m,
               canManage: canManage,
               onScore: () => _scoreMatch(context, m),
+              team1Logo: context.read<TeamProvider>().getLogoForTeam(m.team1Id),
+              team2Logo: context.read<TeamProvider>().getLogoForTeam(m.team2Id),
             ),
           ),
         ],
@@ -451,6 +469,77 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen> {
           _buildBracketSection(untaggedMatches, canManage, AppTheme.accentCyan),
         ],
       ],
+    );
+  }
+
+  _ChampionHighlight? _resolveChampionHighlight(
+    List<MatchModel> matches,
+    TournamentFormat format,
+  ) {
+    if (format == TournamentFormat.roundRobin || matches.isEmpty) {
+      return null;
+    }
+
+    MatchModel? championshipMatch;
+    if (format == TournamentFormat.doubleElimination) {
+      final grandFinals =
+          matches
+              .where((match) => match.bracketType == BracketTypes.grandFinals)
+              .toList()
+            ..sort((a, b) {
+              final roundOrder = a.round.compareTo(b.round);
+              if (roundOrder != 0) return roundOrder;
+              return a.matchNumber.compareTo(b.matchNumber);
+            });
+      if (grandFinals.isNotEmpty) {
+        championshipMatch = grandFinals.last;
+      }
+    } else {
+      final eliminationMatches =
+          matches
+              .where((match) => match.bracketType != BracketTypes.roundRobin)
+              .toList()
+            ..sort((a, b) {
+              final roundOrder = a.round.compareTo(b.round);
+              if (roundOrder != 0) return roundOrder;
+              return a.matchNumber.compareTo(b.matchNumber);
+            });
+      if (eliminationMatches.isNotEmpty) {
+        championshipMatch = eliminationMatches.last;
+      }
+    }
+
+    if (championshipMatch == null ||
+        championshipMatch.status != MatchStatus.completed ||
+        championshipMatch.winnerId == null) {
+      return null;
+    }
+
+    final winnerIsTeam1 =
+        championshipMatch.winnerId == championshipMatch.team1Id;
+    final championName = winnerIsTeam1
+        ? championshipMatch.team1Name
+        : championshipMatch.team2Name;
+    final runnerUpName = winnerIsTeam1
+        ? championshipMatch.team2Name
+        : championshipMatch.team1Name;
+
+    if (championName == null || runnerUpName == null) {
+      return null;
+    }
+
+    return _ChampionHighlight(
+      championName: championName,
+      runnerUpName: runnerUpName,
+      championScore: winnerIsTeam1
+          ? championshipMatch.score1
+          : championshipMatch.score2,
+      runnerUpScore: winnerIsTeam1
+          ? championshipMatch.score2
+          : championshipMatch.score1,
+      matchLabel: format == TournamentFormat.doubleElimination
+          ? 'Grand Finals'
+          : 'Championship Final',
     );
   }
 
@@ -504,6 +593,8 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen> {
                     match: m,
                     canManage: canManage,
                     onScore: () => _scoreMatch(context, m),
+                    team1Logo: context.read<TeamProvider>().getLogoForTeam(m.team1Id),
+                    team2Logo: context.read<TeamProvider>().getLogoForTeam(m.team2Id),
                   ),
                 ),
               ],
@@ -517,9 +608,10 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen> {
   Widget _buildRoundRobinStandings(List<MatchModel> matches) {
     final standings = <String, _RoundRobinStanding>{};
 
+    final teamProv = context.read<TeamProvider>();
     void ensureTeam(String? id, String? name) {
       if (id == null || name == null || name == 'TBD' || name == 'BYE') return;
-      standings.putIfAbsent(id, () => _RoundRobinStanding(name));
+      standings.putIfAbsent(id, () => _RoundRobinStanding(name, teamProv.getLogoForTeam(id)));
     }
 
     for (final match in matches) {
@@ -584,6 +676,7 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen> {
             fontSize: 13,
           ),
           columns: const [
+            DataColumn(label: Text('')),
             DataColumn(label: Text('Team')),
             DataColumn(label: Text('P')),
             DataColumn(label: Text('W')),
@@ -596,6 +689,10 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen> {
             for (final row in rows)
               DataRow(
                 cells: [
+                  DataCell(Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: AvatarBadge(name: row.name, imageUrl: row.logo, size: 28),
+                  )),
                   DataCell(Text(row.name)),
                   DataCell(Text('${row.played}')),
                   DataCell(Text('${row.wins}')),
@@ -875,6 +972,7 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen> {
 
 class _RoundRobinStanding {
   final String name;
+  final String? logo;
   int played = 0;
   int wins = 0;
   int draws = 0;
@@ -882,20 +980,263 @@ class _RoundRobinStanding {
   int pointsFor = 0;
   int pointsAgainst = 0;
 
-  _RoundRobinStanding(this.name);
+  _RoundRobinStanding(this.name, this.logo);
 
   int get points => wins * 3 + draws;
   int get differential => pointsFor - pointsAgainst;
+}
+
+class _ChampionHighlight {
+  final String championName;
+  final String runnerUpName;
+  final int championScore;
+  final int runnerUpScore;
+  final String matchLabel;
+
+  const _ChampionHighlight({
+    required this.championName,
+    required this.runnerUpName,
+    required this.championScore,
+    required this.runnerUpScore,
+    required this.matchLabel,
+  });
+}
+
+class _ChampionBanner extends StatelessWidget {
+  final String tournamentName;
+  final _ChampionHighlight highlight;
+
+  const _ChampionBanner({
+    required this.tournamentName,
+    required this.highlight,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final titleStyle = Theme.of(context).textTheme.displaySmall;
+
+    return GlassCard(
+      glow: true,
+      padding: EdgeInsets.zero,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(22),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+          gradient: LinearGradient(
+            colors: [
+              AppTheme.accentOrange.withValues(alpha: 0.20),
+              AppTheme.accentCyan.withValues(alpha: 0.10),
+              Colors.white.withValues(alpha: 0.03),
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final isCompact = constraints.maxWidth < 760;
+            final details = <Widget>[
+              Text(
+                'Tournament Champion',
+                style: const TextStyle(
+                  color: AppTheme.accentOrange,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.4,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                highlight.championName,
+                style: titleStyle?.copyWith(
+                  fontSize: isCompact ? 28 : 32,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                tournamentName,
+                style: const TextStyle(
+                  color: AppTheme.textSecondary,
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  _ChampionMetaChip(
+                    icon: Icons.workspace_premium,
+                    label: highlight.matchLabel,
+                  ),
+                  _ChampionMetaChip(
+                    icon: Icons.sports_score,
+                    label:
+                        '${highlight.championScore} - ${highlight.runnerUpScore}',
+                  ),
+                  _ChampionMetaChip(
+                    icon: Icons.flag_outlined,
+                    label: 'Def. ${highlight.runnerUpName}',
+                  ),
+                ],
+              ),
+            ];
+
+            final trophy = Container(
+              width: isCompact ? 70 : 84,
+              height: isCompact ? 70 : 84,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: LinearGradient(
+                  colors: [
+                    AppTheme.accentOrange.withValues(alpha: 0.95),
+                    const Color(0xFFFFD180),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppTheme.accentOrange.withValues(alpha: 0.24),
+                    blurRadius: 24,
+                    spreadRadius: -4,
+                  ),
+                ],
+              ),
+              child: const Icon(
+                Icons.emoji_events,
+                color: Color(0xFF2C1A00),
+                size: 38,
+              ),
+            );
+
+            final sideSummary = Column(
+              crossAxisAlignment: isCompact
+                  ? CrossAxisAlignment.start
+                  : CrossAxisAlignment.end,
+              children: [
+                const Text(
+                  'Runner-up',
+                  style: TextStyle(
+                    color: AppTheme.textMuted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  highlight.runnerUpName,
+                  textAlign: isCompact ? TextAlign.left : TextAlign.right,
+                  style: const TextStyle(
+                    color: AppTheme.textPrimary,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                const Text(
+                  'Final Result',
+                  style: TextStyle(
+                    color: AppTheme.textMuted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '${highlight.championScore} - ${highlight.runnerUpScore}',
+                  style: TextStyle(
+                    color: AppTheme.accentOrange,
+                    fontSize: isCompact ? 24 : 28,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            );
+
+            if (isCompact) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  trophy,
+                  const SizedBox(height: 18),
+                  ...details,
+                  const SizedBox(height: 18),
+                  sideSummary,
+                ],
+              );
+            }
+
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                trophy,
+                const SizedBox(width: 20),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: details,
+                  ),
+                ),
+                const SizedBox(width: 20),
+                sideSummary,
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _ChampionMetaChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+
+  const _ChampionMetaChip({required this.icon, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: AppTheme.textSecondary),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: const TextStyle(
+              color: AppTheme.textPrimary,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _BracketMatchCard extends StatelessWidget {
   final MatchModel match;
   final bool canManage;
   final VoidCallback onScore;
+  final String? team1Logo;
+  final String? team2Logo;
   const _BracketMatchCard({
     required this.match,
     required this.canManage,
     required this.onScore,
+    this.team1Logo,
+    this.team2Logo,
   });
 
   @override
@@ -929,12 +1270,14 @@ class _BracketMatchCard extends StatelessWidget {
               name: match.team1Name ?? 'TBD',
               score: match.score1,
               isWinner: isCompleted && match.winnerId == match.team1Id,
+              logo: team1Logo,
             ),
             const Divider(height: 16),
             _TeamRow(
               name: match.team2Name ?? 'TBD',
               score: match.score2,
               isWinner: isCompleted && match.winnerId == match.team2Id,
+              logo: team2Logo,
             ),
             if (isLive)
               Padding(
@@ -991,15 +1334,19 @@ class _TeamRow extends StatelessWidget {
   final String name;
   final int score;
   final bool isWinner;
+  final String? logo;
   const _TeamRow({
     required this.name,
     required this.score,
     required this.isWinner,
+    this.logo,
   });
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
+        AvatarBadge(name: name, imageUrl: logo, size: 24),
+        const SizedBox(width: 8),
         Expanded(
           child: Text(
             name,

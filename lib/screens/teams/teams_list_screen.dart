@@ -1,6 +1,9 @@
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:image_picker_web/image_picker_web.dart';
 import '../../app/theme.dart';
 import '../../core/enums.dart';
 import '../../core/utils.dart';
@@ -71,6 +74,13 @@ class _TeamsListScreenState extends State<TeamsListScreen> {
     );
   }
 
+  /// Convert picked image bytes to a base64 data URI string for Firestore storage.
+  /// This avoids needing Firebase Storage (works on Spark plan).
+  String _bytesToBase64DataUri(Uint8List bytes) {
+    final base64Str = base64Encode(bytes);
+    return 'data:image/png;base64,$base64Str';
+  }
+
   void _showForm(BuildContext context, {TeamModel? team}) {
     final isEdit = team != null;
     final nameCtrl = TextEditingController(text: team?.name ?? '');
@@ -80,9 +90,83 @@ class _TeamsListScreenState extends State<TeamsListScreen> {
     final formKey = GlobalKey<FormState>();
     final sports = context.read<SportProvider>().sports;
 
+    Uint8List? pickedLogoBytes;
+    String? existingLogo = team?.logo;
+    bool saving = false;
+
     showDialog(context: context, builder: (ctx) => StatefulBuilder(builder: (ctx, setDialogState) => AlertDialog(
       title: Text(isEdit ? 'Edit Team' : 'Add Team'),
       content: SizedBox(width: 500, child: Form(key: formKey, child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        // Logo Picker
+        GestureDetector(
+          onTap: () async {
+            final bytes = await ImagePickerWeb.getImageAsBytes();
+            if (bytes != null) {
+              setDialogState(() => pickedLogoBytes = bytes);
+            }
+          },
+          child: MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: Column(
+              children: [
+                Container(
+                  width: 90, height: 90,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppTheme.accentPurple.withValues(alpha: 0.1),
+                    border: Border.all(
+                      color: pickedLogoBytes != null
+                          ? AppTheme.accentCyan
+                          : AppTheme.accentPurple.withValues(alpha: 0.3),
+                      width: 2,
+                    ),
+                    image: pickedLogoBytes != null
+                        ? DecorationImage(image: MemoryImage(pickedLogoBytes!), fit: BoxFit.cover)
+                        : existingLogo != null && existingLogo!.isNotEmpty
+                            ? DecorationImage(
+                                image: _imageProviderFromLogo(existingLogo!),
+                                fit: BoxFit.cover,
+                              )
+                            : null,
+                  ),
+                  child: pickedLogoBytes == null && (existingLogo == null || existingLogo!.isEmpty)
+                      ? const Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                          Icon(Icons.add_photo_alternate_outlined, color: AppTheme.accentPurple, size: 26),
+                          SizedBox(height: 2),
+                          Text('Logo', style: TextStyle(color: AppTheme.accentPurple, fontSize: 10, fontWeight: FontWeight.w500)),
+                        ])
+                      : null,
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  pickedLogoBytes != null ? 'Logo selected ✓' : 'Tap to upload logo',
+                  style: TextStyle(
+                    color: pickedLogoBytes != null ? AppTheme.accentGreen : AppTheme.textMuted,
+                    fontSize: 11,
+                  ),
+                ),
+                // Remove logo button if there's an existing or picked logo
+                if (pickedLogoBytes != null || (existingLogo != null && existingLogo!.isNotEmpty))
+                  TextButton.icon(
+                    onPressed: () {
+                      setDialogState(() {
+                        pickedLogoBytes = null;
+                        existingLogo = null;
+                      });
+                    },
+                    icon: const Icon(Icons.close, size: 14, color: AppTheme.accentRed),
+                    label: const Text('Remove Logo', style: TextStyle(color: AppTheme.accentRed, fontSize: 11)),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
         TextFormField(controller: nameCtrl, validator: (v) => AppUtils.validateRequired(v, 'Team name'), decoration: const InputDecoration(labelText: 'Team Name')),
         const SizedBox(height: 12),
         DropdownButtonFormField<SportType>(initialValue: sportType, decoration: const InputDecoration(labelText: 'Category'), items: SportType.values.map((s) => DropdownMenuItem(value: s, child: Text(s.label))).toList(), onChanged: (v) => setDialogState(() => sportType = v!)),
@@ -93,19 +177,62 @@ class _TeamsListScreenState extends State<TeamsListScreen> {
       ])))),
       actions: [
         TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-        ElevatedButton(onPressed: () async {
-          if (!formKey.currentState!.validate()) return;
-          final prov = context.read<TeamProvider>();
-          if (isEdit) {
-            await prov.updateTeam(team.id, {'name': nameCtrl.text.trim(), 'sportType': sportType.name, 'sportId': selectedSportId ?? '', 'description': descCtrl.text.trim()});
-          } else {
-            await prov.addTeam(TeamModel(id: '', name: nameCtrl.text.trim(), sportId: selectedSportId ?? '', sportType: sportType, description: descCtrl.text.trim(), createdAt: DateTime.now()));
-          }
-          if (ctx.mounted) Navigator.pop(ctx);
-          if (context.mounted) AppUtils.showSuccess(context, isEdit ? 'Team updated' : 'Team added');
-        }, child: Text(isEdit ? 'Update' : 'Add')),
+        ElevatedButton(
+          onPressed: saving ? null : () async {
+            if (!formKey.currentState!.validate()) return;
+            setDialogState(() => saving = true);
+
+            final prov = context.read<TeamProvider>();
+            final rootContext = context;
+
+            // Determine the logo value
+            String? logoValue = existingLogo;
+            if (pickedLogoBytes != null) {
+              logoValue = _bytesToBase64DataUri(pickedLogoBytes!);
+            }
+
+            if (isEdit) {
+              await prov.updateTeam(team.id, {
+                'name': nameCtrl.text.trim(),
+                'sportType': sportType.name,
+                'sportId': selectedSportId ?? '',
+                'description': descCtrl.text.trim(),
+                'logo': logoValue,
+              });
+            } else {
+              await prov.addTeam(TeamModel(
+                id: '',
+                name: nameCtrl.text.trim(),
+                sportId: selectedSportId ?? '',
+                sportType: sportType,
+                description: descCtrl.text.trim(),
+                logo: logoValue,
+                createdAt: DateTime.now(),
+              ));
+            }
+            if (ctx.mounted) Navigator.pop(ctx);
+            if (rootContext.mounted) AppUtils.showSuccess(rootContext, isEdit ? 'Team updated' : 'Team added');
+          },
+          child: saving
+              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+              : Text(isEdit ? 'Update' : 'Add'),
+        ),
       ],
     )));
+  }
+
+  /// Returns the appropriate ImageProvider for a logo string (base64 data URI or network URL).
+  ImageProvider _imageProviderFromLogo(String logo) {
+    if (logo.startsWith('data:')) {
+      final commaIndex = logo.indexOf(',');
+      if (commaIndex != -1) {
+        try {
+          final bytes = base64Decode(logo.substring(commaIndex + 1));
+          return MemoryImage(bytes);
+        } catch (_) {}
+      }
+    }
+    return NetworkImage(logo);
   }
 
   void _confirmDelete(BuildContext context, TeamModel t) {
@@ -208,7 +335,8 @@ class _TeamCard extends StatelessWidget {
       decoration: BoxDecoration(color: AppTheme.card, borderRadius: BorderRadius.circular(AppTheme.radiusLg), border: Border.all(color: AppTheme.border)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: AppTheme.accentPurple.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(10)), child: Icon(team.sportType == SportType.esports ? Icons.sports_esports : Icons.sports_basketball, color: AppTheme.accentPurple, size: 22)),
+          // Team logo or fallback icon
+          _buildTeamLogo(),
           const SizedBox(width: 12),
           Expanded(child: Text(team.name, style: const TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w600, fontSize: 16), overflow: TextOverflow.ellipsis)),
           if (canManage) PopupMenuButton<String>(
@@ -249,6 +377,31 @@ class _TeamCard extends StatelessWidget {
           _StatChip(label: 'D', value: '${team.draws}', color: AppTheme.accentOrange),
         ]),
       ]),
+    );
+  }
+
+  /// Build the team logo widget — shows uploaded logo or a fallback icon.
+  Widget _buildTeamLogo() {
+    if (team.logo != null && team.logo!.isNotEmpty) {
+      return AvatarBadge(
+        name: team.name,
+        imageUrl: team.logo,
+        size: 44,
+        showBorder: true,
+      );
+    }
+    // Fallback: sport type icon
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: AppTheme.accentPurple.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Icon(
+        team.sportType == SportType.esports ? Icons.sports_esports : Icons.sports_basketball,
+        color: AppTheme.accentPurple,
+        size: 22,
+      ),
     );
   }
 }

@@ -17,6 +17,15 @@ class TeamProvider extends ChangeNotifier {
   String? get error => _error;
   int get count => _teams.length;
 
+  /// Look up a team's logo by its ID. Returns null if not found.
+  String? getLogoForTeam(String? teamId) {
+    if (teamId == null) return null;
+    for (final team in _teams) {
+      if (team.id == teamId) return team.logo;
+    }
+    return null;
+  }
+
   void startListening() {
     _isLoading = true;
     notifyListeners();

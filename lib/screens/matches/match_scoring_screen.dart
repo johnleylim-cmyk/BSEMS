@@ -7,6 +7,8 @@ import '../../core/enums.dart';
 import '../../core/utils.dart';
 import '../../providers/match_provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/team_provider.dart';
+import '../../widgets/avatar_badge.dart';
 import '../../widgets/glass_card.dart';
 import '../../widgets/gradient_button.dart';
 import 'package:go_router/go_router.dart';
@@ -92,6 +94,9 @@ class _MatchScoringScreenState extends State<MatchScoringScreen> {
     final isLive = match.status == MatchStatus.live;
     final hasTeams = match.team1Id != null && match.team2Id != null;
     final statusColor = AppUtils.statusColor(match.status.name);
+    final teamProvider = context.watch<TeamProvider>();
+    final team1Logo = teamProvider.getLogoForTeam(match.team1Id);
+    final team2Logo = teamProvider.getLogoForTeam(match.team2Id);
 
     return Scaffold(
       backgroundColor: AppTheme.background,
@@ -202,27 +207,11 @@ class _MatchScoringScreenState extends State<MatchScoringScreen> {
                           Expanded(
                             child: Column(
                               children: [
-                                Container(
-                                  padding: const EdgeInsets.all(16),
-                                  decoration: BoxDecoration(
-                                    color:
-                                        (isCompleted &&
-                                                    match.winnerId ==
-                                                        match.team1Id
-                                                ? AppTheme.accentGreen
-                                                : AppTheme.accentCyan)
-                                            .withValues(alpha: 0.1),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Icon(
-                                    Icons.groups,
-                                    size: 32,
-                                    color:
-                                        isCompleted &&
-                                            match.winnerId == match.team1Id
-                                        ? AppTheme.accentGreen
-                                        : AppTheme.accentCyan,
-                                  ),
+                                AvatarBadge(
+                                  name: match.team1Name ?? 'TBD',
+                                  imageUrl: team1Logo,
+                                  size: 64,
+                                  showBorder: isCompleted && match.winnerId == match.team1Id,
                                 ),
                                 const SizedBox(height: 12),
                                 Text(
@@ -293,27 +282,11 @@ class _MatchScoringScreenState extends State<MatchScoringScreen> {
                           Expanded(
                             child: Column(
                               children: [
-                                Container(
-                                  padding: const EdgeInsets.all(16),
-                                  decoration: BoxDecoration(
-                                    color:
-                                        (isCompleted &&
-                                                    match.winnerId ==
-                                                        match.team2Id
-                                                ? AppTheme.accentGreen
-                                                : AppTheme.accentPurple)
-                                            .withValues(alpha: 0.1),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Icon(
-                                    Icons.groups,
-                                    size: 32,
-                                    color:
-                                        isCompleted &&
-                                            match.winnerId == match.team2Id
-                                        ? AppTheme.accentGreen
-                                        : AppTheme.accentPurple,
-                                  ),
+                                AvatarBadge(
+                                  name: match.team2Name ?? 'TBD',
+                                  imageUrl: team2Logo,
+                                  size: 64,
+                                  showBorder: isCompleted && match.winnerId == match.team2Id,
                                 ),
                                 const SizedBox(height: 12),
                                 Text(

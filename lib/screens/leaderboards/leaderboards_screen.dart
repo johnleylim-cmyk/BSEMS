@@ -8,6 +8,7 @@ import '../../models/match_model.dart';
 import '../../models/team_model.dart';
 import '../../providers/match_provider.dart';
 import '../../providers/team_provider.dart';
+import '../../widgets/avatar_badge.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/shimmer_loader.dart';
 
@@ -69,6 +70,7 @@ class _LeaderboardsScreenState extends State<LeaderboardsScreen> {
                         final row = rows[i];
                         final rank = i + 1;
                         final rankColor = _rankColor(rank);
+                        final teamLogo = teamProvider.getLogoForTeam(row.teamId);
 
                         return Container(
                               margin: const EdgeInsets.only(bottom: 8),
@@ -111,6 +113,13 @@ class _LeaderboardsScreenState extends State<LeaderboardsScreen> {
                                     ),
                                     const SizedBox(width: 12),
                                   ],
+                                  // Team logo
+                                  AvatarBadge(
+                                    name: row.name,
+                                    imageUrl: teamLogo,
+                                    size: 36,
+                                  ),
+                                  const SizedBox(width: 12),
                                   Expanded(
                                     child: Text(
                                       row.name,
@@ -177,6 +186,7 @@ class _LeaderboardsScreenState extends State<LeaderboardsScreen> {
       return rowsByTeamId.putIfAbsent(
         id,
         () => _LeaderboardRow(
+          teamId: id,
           name: name?.trim().isNotEmpty == true ? name! : 'Unknown Team',
         ),
       );
@@ -238,6 +248,7 @@ class _LeaderboardsScreenState extends State<LeaderboardsScreen> {
 }
 
 class _LeaderboardRow {
+  final String teamId;
   final String name;
   int played = 0;
   int wins = 0;
@@ -246,7 +257,7 @@ class _LeaderboardRow {
   int pointsFor = 0;
   int pointsAgainst = 0;
 
-  _LeaderboardRow({required this.name});
+  _LeaderboardRow({required this.teamId, required this.name});
 
   double get winRate => played > 0 ? (wins / played) * 100 : 0;
   int get differential => pointsFor - pointsAgainst;

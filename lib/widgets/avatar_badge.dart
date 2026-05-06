@@ -1,7 +1,10 @@
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import '../app/theme.dart';
 
 /// Circular avatar with optional online badge and gradient border.
+/// Supports network URLs and base64 data URIs for images.
 class AvatarBadge extends StatelessWidget {
   final String? imageUrl;
   final String name;
@@ -16,15 +19,34 @@ class AvatarBadge extends StatelessWidget {
     this.showBorder = false,
   });
 
+  /// Parse a base64 data URI into bytes, or return null.
+  static Uint8List? _parseBase64(String url) {
+    if (url.startsWith('data:')) {
+      final commaIndex = url.indexOf(',');
+      if (commaIndex != -1) {
+        try {
+          return base64Decode(url.substring(commaIndex + 1));
+        } catch (_) {
+          return null;
+        }
+      }
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final initials = _getInitials(name);
 
     Widget avatar;
     if (imageUrl != null && imageUrl!.isNotEmpty) {
+      final base64Bytes = _parseBase64(imageUrl!);
+      final ImageProvider imageProvider = base64Bytes != null
+          ? MemoryImage(base64Bytes)
+          : NetworkImage(imageUrl!);
       avatar = CircleAvatar(
         radius: size / 2,
-        backgroundImage: NetworkImage(imageUrl!),
+        backgroundImage: imageProvider,
         backgroundColor: AppTheme.surfaceLight,
       );
     } else {
